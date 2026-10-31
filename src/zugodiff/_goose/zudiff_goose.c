@@ -1375,7 +1375,7 @@ typedef struct {
     gs_stack gs_gstk_csteps_g;
 } gs_globals_t;
 static gs_globals_t gs_globals_main;
-#define GS_GL ((gs_globals_t *)gs_gl)
+#define GS_GL (&gs_globals_main)
 /* ==== runtime_ext.h ==== */
 /* Goose runtime: extern-fn support, spliced in after the generated type
    declarations, since it is written against them: sl_u8 (a u8 slice: data,
@@ -7566,14 +7566,15 @@ void goose_init(int argc, char **argv) {
     gs_program_init(argc, argv);
 }
 
-struct goose_ctx { void *gl; gs_stack *stks; int64_t nstks; void *reg; int started; };
-static struct goose_ctx gs_ctx_main;
+struct goose_ctx { gs_globals_t *gl; gs_stack *stks; int64_t nstks; void *reg; int started; };
+static gs_globals_t gs_ctx_main_gl;
+static struct goose_ctx gs_ctx_main = { &gs_ctx_main_gl, NULL, 0, NULL, 1 };
 static struct goose_ctx *gs_ctx_cur;
 
 struct goose_ctx *goose_ctx_new(void) {
     struct goose_ctx *c = (struct goose_ctx *)calloc(1, sizeof *c);
     if (!c) return NULL;
-    c->gl = calloc(1, sizeof(gs_globals_t));
+    c->gl = (gs_globals_t *)calloc(1, sizeof(gs_globals_t));
     c->reg = gs_registry_new(23);
     if (!c->gl || !c->reg) {
         free(c->gl);
@@ -7588,11 +7589,11 @@ struct goose_ctx *goose_ctx_swap(struct goose_ctx *c) {
     struct goose_ctx *prev = gs_ctx_cur ? gs_ctx_cur : &gs_ctx_main;
     if (!c) c = &gs_ctx_main;
     if (c == prev) return prev;
-    prev->gl = gs_gl;
+    memcpy(prev->gl, GS_GL, sizeof(gs_globals_t));
     prev->stks = gs_stks;
     prev->nstks = gs_nstks;
     prev->reg = gs_registry_swap(c->reg);
-    gs_gl = c->gl;
+    memcpy(GS_GL, c->gl, sizeof(gs_globals_t));
     gs_stks = c->stks;
     gs_nstks = c->nstks;
     gs_ctx_cur = c == &gs_ctx_main ? NULL : c;
