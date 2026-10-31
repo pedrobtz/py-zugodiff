@@ -11,7 +11,11 @@
    The one exception is PyErr_CheckSignals(), which the interrupt poll
    (goose_host_poll) calls during the run: it may set an exception
    (KeyboardInterrupt), and the call then fails with goose_host_call()
-   returning 2 and that exception still set. The GIL is held throughout. */
+   returning 2 and that exception still set. The GIL is held throughout.
+
+   A Python signal handler the poll runs may call zugodiff again: such a
+   nested call runs in a Goose context of its own (zugodiff_call), so that
+   it cannot touch the outer call's globals or data stacks. */
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -38,6 +42,57 @@ static PyObject *run_failed(int failed, const uint8_t *msg, int64_t len) {
     Py_DECREF(s);
   }
   return NULL;
+}
+
+/* A call made while none runs uses the main context, goose_init's. A call
+   nested in one uses the context for its depth, made on first use and
+   dropped if a call in it fails. */
+#define ZUGODIFF_MAX_DEPTH 8
+static goose_ctx *contexts[ZUGODIFF_MAX_DEPTH];
+static int depth;
+static const char too_deep[] = "zugodiff calls nested more than 8 deep";
+static const char no_context[] = "cannot make a Goose context for a nested call";
+
+static int zugodiff_call(void (*body)(void *), void *data, const uint8_t **msg, int64_t *len) {
+  int failed;
+  if (depth == 0) {
+    depth++;
+    failed = goose_host_call(body, data, msg, len);
+    depth--;
+    return failed;
+  }
+  if (depth >= ZUGODIFF_MAX_DEPTH) {
+    *msg = (const uint8_t *)too_deep;
+    *len = (int64_t)sizeof too_deep - 1;
+    return 1;
+  }
+  goose_ctx *c = contexts[depth];
+  if (!c) {
+    c = goose_ctx_new();
+    if (!c) {
+      *msg = (const uint8_t *)no_context;
+      *len = (int64_t)sizeof no_context - 1;
+      return 1;
+    }
+    goose_ctx *prev = goose_ctx_swap(c);
+    int bad = goose_host_call(goose_ctx_start, NULL, msg, len);
+    goose_ctx_swap(prev);
+    if (bad) {
+      goose_ctx_free(c);
+      return 1;
+    }
+    contexts[depth] = c;
+  }
+  goose_ctx *prev = goose_ctx_swap(c);
+  depth++;
+  failed = goose_host_call(body, data, msg, len);
+  depth--;
+  goose_ctx_swap(prev);
+  if (failed) {
+    goose_ctx_free(c);
+    contexts[depth] = NULL;
+  }
+  return failed;
 }
 
 /* Test hook: the n-th poll of the next run raises SIGINT first. */
@@ -139,7 +194,7 @@ static PyObject *core_diff(PyObject *self, PyObject *args) {
 
   const uint8_t *msg;
   int64_t len;
-  int failed = goose_host_call(diff_body, &c, &msg, &len);
+  int failed = zugodiff_call(diff_body, &c, &msg, &len);
   raise_after = 0;
   PyObject *out = failed ? NULL : PyBytes_FromStringAndSize((const char *)c.out, (Py_ssize_t)c.n);
   PyBuffer_Release(&va);
@@ -165,7 +220,7 @@ static PyObject *core_probe_index(PyObject *self, PyObject *arg) {
   if (c.i == -1 && PyErr_Occurred()) return NULL;
   const uint8_t *msg;
   int64_t len;
-  int failed = goose_host_call(probe_index_body, &c, &msg, &len);
+  int failed = zugodiff_call(probe_index_body, &c, &msg, &len);
   if (failed) return run_failed(failed, msg, len);
   return PyLong_FromLongLong(c.v);
 }
@@ -189,7 +244,7 @@ static PyObject *core_probe_stack(PyObject *self, PyObject *args) {
   probe_stack_call c = {n, (uint8_t)fail, 0};
   const uint8_t *msg;
   int64_t len;
-  int failed = goose_host_call(probe_stack_body, &c, &msg, &len);
+  int failed = zugodiff_call(probe_stack_body, &c, &msg, &len);
   if (failed) return run_failed(failed, msg, len);
   return PyLong_FromLongLong(c.v);
 }
@@ -207,7 +262,7 @@ static PyObject *core_test_touch_gap(PyObject *self, PyObject *unused) {
   if (!gap) return PyErr_Format(GooseError, "no data stack");
   const uint8_t *msg;
   int64_t len;
-  int failed = goose_host_call(touch_gap_body, gap, &msg, &len);
+  int failed = zugodiff_call(touch_gap_body, gap, &msg, &len);
   if (failed) return run_failed(failed, msg, len);
   Py_RETURN_NONE;
 }

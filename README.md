@@ -55,8 +55,9 @@ has no runtime code of its own:
   the poll calls `PyErr_CheckSignals()`. A `KeyboardInterrupt`, or any
   exception a Python signal handler raises, fails the call cleanly. The
   runtime installs no `SIGINT` handler.
-- **Nested calls are refused.** A signal handler that calls back into
-  zugodiff gets `GooseError`, because Goose's globals are per process.
+- **Nested calls work.** A signal handler that calls back into zugodiff
+  runs its diff in a Goose context of its own (`--contexts`): its own
+  globals and data stacks, so the outer diff is untouched.
 - **Guard pages.** Data stacks are reserved with a `PROT_NONE` gap. A fault
   handler is installed only while Goose code runs, and faults outside the
   stacks go back to Python's handlers.

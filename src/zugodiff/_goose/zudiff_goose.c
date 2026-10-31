@@ -6,7 +6,7 @@
    Link it with the runtime that `goose --emit-runtime` writes. */
 
 #define GS_SEPARATE_RUNTIME 1
-#define GS_RUNTIME_VERSION ff8a601ed2a7
+#define GS_RUNTIME_VERSION fb5192b45ef6
 /* ==== runtime.h ==== */
 /* Goose runtime — the part every compiler-generated C file starts with.
    Plain C99 (+ #pragma pack, alignment typedefs); compiles with MSVC,
@@ -952,6 +952,12 @@ GS_API void gs_rt_start(int argc, char **argv, uint64_t reserve, uint64_t gap,
                         uint64_t budget, int64_t mainregions, int64_t workerregions);
 /* A fresh region, registered to the calling thread program. */
 GS_API uint8_t *gs_reserve_region(gs_stack *stack);
+/* Region registries a host's contexts hold (--contexts, GS_HOSTED): a new
+   empty one; installing one, which returns the one it replaces (NULL is
+   main's); and releasing one's regions. */
+GS_API void *gs_registry_new(int64_t capacity);
+GS_API void *gs_registry_swap(void *registry);
+GS_API void gs_registry_free(void *registry);
 /* The calling thread program's stack use, on stderr (GS_STACK_STATS):
    `stacks` is how many of its indexed data stacks exist. */
 GS_API void gs_stack_stats(int64_t stacks);
@@ -6885,6 +6891,59 @@ static void gs_program_init(int argc, char **argv) {
 void goose_init(int argc, char **argv) {
     if (gs_program_initialized) return;
     gs_program_init(argc, argv);
+}
+
+struct goose_ctx { gs_globals_t *gl; gs_stack *stks; int64_t nstks; void *reg; int started; };
+static gs_globals_t gs_ctx_main_gl;
+static struct goose_ctx gs_ctx_main = { &gs_ctx_main_gl, NULL, 0, NULL, 1 };
+static struct goose_ctx *gs_ctx_cur;
+
+struct goose_ctx *goose_ctx_new(void) {
+    struct goose_ctx *c = (struct goose_ctx *)calloc(1, sizeof *c);
+    if (!c) return NULL;
+    c->gl = (gs_globals_t *)calloc(1, sizeof(gs_globals_t));
+    c->reg = gs_registry_new(23);
+    if (!c->gl || !c->reg) {
+        free(c->gl);
+        gs_registry_free(c->reg);
+        free(c);
+        return NULL;
+    }
+    return c;
+}
+
+struct goose_ctx *goose_ctx_swap(struct goose_ctx *c) {
+    struct goose_ctx *prev = gs_ctx_cur ? gs_ctx_cur : &gs_ctx_main;
+    if (!c) c = &gs_ctx_main;
+    if (c == prev) return prev;
+    memcpy(prev->gl, GS_GL, sizeof(gs_globals_t));
+    prev->stks = gs_stks;
+    prev->nstks = gs_nstks;
+    prev->reg = gs_registry_swap(c->reg);
+    memcpy(GS_GL, c->gl, sizeof(gs_globals_t));
+    gs_stks = c->stks;
+    gs_nstks = c->nstks;
+    gs_ctx_cur = c == &gs_ctx_main ? NULL : c;
+    return prev;
+}
+
+void goose_ctx_start(void *unused) {
+    struct goose_ctx *c = gs_ctx_cur;
+    (void)unused;
+    if (!gs_program_initialized)
+        gs_panic("goose_init must be called before goose_ctx_start");
+    if (!c || c->started) return;
+    gs_stack_block(1);
+    gs_init_globals();
+    c->started = 1;
+}
+
+void goose_ctx_free(struct goose_ctx *c) {
+    if (!c || c == &gs_ctx_main || c == gs_ctx_cur) return;
+    gs_registry_free(c->reg);
+    free(c->stks);
+    free(c->gl);
+    free(c);
 }
 
 const uint8_t * zudiff_diff_ids(sl_i32 gs_export_arg0, sl_i32 gs_export_arg1, gs_i32 gs_export_arg2, gs_i64 gs_export_arg3, gs_i64 *gs_export_len) {
