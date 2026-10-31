@@ -64,20 +64,24 @@ def test_a_signal_handler_runs_inside_the_call():
     assert d.minimal
 
 
-def test_re_entering_from_a_signal_handler_is_refused():
+def test_a_diff_from_a_signal_handler_runs_in_its_own_context():
     a, b = busy_pair()
+    alone = zugodiff.diff(a, b, minimal=True)
+    before = _core.stack_used()
+    inner = []
 
     def handler(*_):
-        zugodiff.diff([1], [2])
+        inner.append(zugodiff.diff([1, 2, 3, 4, 5], [1, 3, 5, 6], minimal=True))
 
     previous = signal.signal(signal.SIGINT, handler)
     try:
         _core.test_raise_after(3)
-        with pytest.raises(GooseError, match="re-entered"):
-            zugodiff.diff(a, b, minimal=True)
+        outer = zugodiff.diff(a, b, minimal=True)
     finally:
         signal.signal(signal.SIGINT, previous)
-    assert zugodiff.diff([1, 2], [2]).distance == 1
+    assert [d.distance for d in inner] == [3]
+    assert outer.runs == alone.runs
+    assert _core.stack_used() == before
 
 
 def test_goose_info():

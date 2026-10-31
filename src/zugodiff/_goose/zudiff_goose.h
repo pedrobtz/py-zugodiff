@@ -81,6 +81,16 @@ void goose_host_poll(void);
 int64_t goose_host_stack_used(void);
 uint8_t *goose_host_test_gap(void);
 void goose_host_unload(void);
+/* Contexts (--contexts): each has its own globals and data stacks. A new
+   one is started by goose_ctx_start inside goose_host_call while it is
+   the current one; goose_host_call then accepts a call nested in
+   another once the host has swapped in a different context. The main
+   context, goose_init's, is what goose_ctx_swap(NULL) restores. */
+typedef struct goose_ctx goose_ctx;
+goose_ctx *goose_ctx_new(void);
+goose_ctx *goose_ctx_swap(goose_ctx *ctx);
+void goose_ctx_start(void *unused);
+void goose_ctx_free(goose_ctx *ctx);
 const uint8_t * zudiff_diff_ids(sl_i32 gs_export_arg0, sl_i32 gs_export_arg1, gs_i32 gs_export_arg2, gs_i64 gs_export_arg3, gs_i64 *gs_export_len);
 const uint8_t * zudiff_diff_bytes(sl_u8 gs_export_arg0_2, sl_u8 gs_export_arg1_2, gs_i32 gs_export_arg2_2, gs_i64 gs_export_arg3_2, gs_i64 *gs_export_len_2);
 gs_i64 zudiff_probe_index(gs_i64 gs_export_arg0_3);
