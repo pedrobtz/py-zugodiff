@@ -15,7 +15,7 @@
 #else
 #define GS_NEED_THREADS 1
 #endif
-#define GS_RUNTIME_VERSION 053c20fda651
+#define GS_RUNTIME_VERSION fb5192b45ef6
 
 /* ==== runtime.h ==== */
 /* Goose runtime — the part every compiler-generated C file starts with.
@@ -483,7 +483,7 @@ GS_MAYBE_UNUSED static uint64_t gs_bytemask(int64_t k) {
    overlapping, where the library's memcpy would take a call and a dispatch
    on the length; as the C library's memcpy, it takes runs that do not
    overlap. */
-static void gs_memcpy(void *dst, const void *src, size_t n) {
+GS_MAYBE_UNUSED static void gs_memcpy(void *dst, const void *src, size_t n) {
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     if (n <= 16) {
@@ -4552,6 +4552,16 @@ GS_API void gs_os_flush_stdout(void) { fflush(stdout); }
 #define gs_os_getc_stdin() getc_unlocked(stdin)
 #endif
 
+#ifdef GS_HOSTED
+/* stdin is the host's (R's console reads it): a hosted program sees none,
+   and touches no stream of the process. */
+GS_API uint8_t gs_os_read_line(gs_rref out) {
+    (void)out;
+    return 0;
+}
+
+GS_API void gs_os_read_stdin(gs_rref out) { (void)out; }
+#else
 /* One line of stdin, without its newline or a carriage return before it;
    false at end of input. */
 GS_API uint8_t gs_os_read_line(gs_rref out) {
@@ -4581,6 +4591,7 @@ GS_API void gs_os_read_stdin(gs_rref out) {
         gs_bld_append(out, buf, (int64_t)n);
     }
 }
+#endif
 
 GS_API int64_t gs_os_arg_count(void) { return gs_argc; }
 

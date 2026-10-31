@@ -5,6 +5,6 @@
    the pin itself, which zudiff_info() reports. */
 #ifndef GOOSE_VERSION_H
 #define GOOSE_VERSION_H
-#define GS_RUNTIME_VERSION 053c20fda651
-#define ZUDIFF_GOOSE_COMMIT "0d1c106c8a2ea41ad13a10ca1ae8c5dcd814a8c4"
+#define GS_RUNTIME_VERSION fb5192b45ef6
+#define ZUDIFF_GOOSE_COMMIT "7ae926a4200ba9fa5541ce6616368bd01ad0db21"
 #endif

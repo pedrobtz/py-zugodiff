@@ -6,7 +6,7 @@
    Link it with the runtime that `goose --emit-runtime` writes. */
 
 #define GS_SEPARATE_RUNTIME 1
-#define GS_RUNTIME_VERSION 053c20fda651
+#define GS_RUNTIME_VERSION fb5192b45ef6
 /* ==== runtime.h ==== */
 /* Goose runtime — the part every compiler-generated C file starts with.
    Plain C99 (+ #pragma pack, alignment typedefs); compiles with MSVC,
@@ -473,7 +473,7 @@ GS_MAYBE_UNUSED static uint64_t gs_bytemask(int64_t k) {
    overlapping, where the library's memcpy would take a call and a dispatch
    on the length; as the C library's memcpy, it takes runs that do not
    overlap. */
-static void gs_memcpy(void *dst, const void *src, size_t n) {
+GS_MAYBE_UNUSED static void gs_memcpy(void *dst, const void *src, size_t n) {
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     if (n <= 16) {
