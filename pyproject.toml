@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zugodiff"
+version = "0.0.1.dev0"
+description = "Myers and patience diff with the core written in Goose and compiled to C"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT AND Apache-2.0"
+license-files = ["LICENSE", "LICENSES/goose-LICENSE"]
+authors = [{ name = "Pedro Baltazar", email = "pedrobtz@gmail.com" }]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Operating System :: POSIX",
+  "Programming Language :: C",
+  "Programming Language :: Python :: 3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.urls]
+Source = "https://github.com/pedrobtz/py-zugodiff"
+"Diff core" = "https://github.com/pedrobtz/zudiff"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+zugodiff = ["_goose/*.h", "_goose/VENDORED"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

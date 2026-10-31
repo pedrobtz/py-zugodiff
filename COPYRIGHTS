@@ -1,0 +1,36 @@
+zugodiff: copyright and licensing of all included files
+=======================================================
+
+zugodiff itself
+---------------
+
+Copyright (c) 2026 Pedro Baltazar, MIT licence (see LICENSE):
+
+    src/zugodiff/__init__.py                the Python interface
+    src/zugodiff/_core.c                    the CPython glue
+    src/zugodiff/_goose/goose_py_runtime.*  the replacement Goose runtime,
+                                            ported from zudiff's
+    tools/, tests/, bench/
+
+
+Third-party code: Goose
+-----------------------
+
+    Upstream:   https://github.com/aardappel/goose
+    Built from: the repository and commit in src/zugodiff/_goose/VENDORED,
+                through zudiff (https://github.com/pedrobtz/zudiff)
+    Licence:    Apache-2.0
+    Copyright:  Wouter van Oortmerssen
+
+The full licence is LICENSES/goose-LICENSE. These files are under it:
+
+    src/zugodiff/_goose/zudiff_goose.c   compiled from zudiff's Goose source
+                                         by the Goose compiler, and so holds
+                                         the parts of the Goose runtime that
+                                         inline into every program
+    src/zugodiff/_goose/zudiff_goose.h   written by the same compilation
+    src/zugodiff/_goose/goose_version.h  the compiler's runtime interface hash
+    src/zugodiff/_goose/goose_vendor.c   byte search and number formatting,
+                                         copied from src/runtime/runtime_impl.h
+
+Apache-2.0 and MIT are compatible: each file keeps its own terms.

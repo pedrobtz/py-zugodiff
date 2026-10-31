@@ -1,0 +1,50 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: read-all
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build and install
+        run: pip install '.[test]'
+      - name: Test
+        run: python -m pytest -v
+      - name: Only PyInit__core is exported
+        run: |
+          so=$(python -c "import zugodiff._core as c; print(c.__file__)")
+          if [ "$RUNNER_OS" = "macOS" ]; then syms=$(nm -gU "$so"); else syms=$(nm -D --defined-only "$so"); fi
+          echo "$syms"
+          ! echo "$syms" | grep -v -E '(_?PyInit__core)$' | grep -E ' [TDBR] '
+
+  ubsan:
+    # The generated C under UBSan with the alignment check on, as CRAN
+    # checks zudiff.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build with UBSan
+        run: |
+          CC=clang CFLAGS="-fsanitize=undefined,alignment -fno-sanitize-recover=all -fno-omit-frame-pointer" \
+            LDFLAGS="-fsanitize=undefined" pip install '.[test]'
+      - name: Test
+        run: |
+          export LD_PRELOAD=$(clang -print-file-name=libclang_rt.ubsan_standalone-x86_64.so)
+          python -m pytest -v

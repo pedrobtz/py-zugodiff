@@ -1,0 +1,8 @@
+# Written by tools/sync-zudiff.sh. Do not edit.
+zudiff_commit ecada10419d4cbb31453c131a6e26be830fe0457
+goose_repository https://github.com/pedrobtz/goose
+goose_commit b362b5a5b716ae8f9bbf1d18b59f417e20dea833
+sha256 25a31f6cfa011d2dbdf4e7f56ae30ecfb08578620545323a9f2bcb38d79326cc  zudiff_goose.c
+sha256 970ca7aa0bf2f6b0cf76e687d95d1d0df38c6b20d9ea9b639c157d370e0368d9  zudiff_goose.h
+sha256 2e3e3e163151dc154436fe0f1d88d299c928acffe4ab6f7fb9682ee18603216d  goose_vendor.c
+sha256 6d2fc9efca3a8196f729b133eb0cbf95064f84a16f5f21c7a84854b7281cfe9a  goose_version.h
