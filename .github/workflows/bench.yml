@@ -1,0 +1,31 @@
+# Times the Goose fork patches on GitHub's Linux runners (zudiff's
+# .agents/goose-fork.md): main, the hosted runtime, contexts, and a second
+# build of the hosted runtime as an A/A control for the runners' noise.
+# Manual or on pushes to this branch only.
+name: bench
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [bench-linux]
+
+permissions: read-all
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v5
+      - name: Local branches for each build
+        run: |
+          for b in main goose-hosted goose-contexts; do git branch -f "$b" "origin/$b"; done
+          git branch -f aa-goose-hosted origin/goose-hosted
+          lscpu | grep -E "Model name|^CPU\(s\)"
+      - name: Evaluate
+        run: python tools/eval_goose_fork.py --rounds 10 main goose-hosted goose-contexts aa-goose-hosted | tee -a "$GITHUB_STEP_SUMMARY"
