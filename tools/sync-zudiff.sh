@@ -24,7 +24,7 @@ fi
 pkg=$(cd "$(dirname "$0")/.." && pwd)
 zd=$(cd "$1" && pwd)
 dest="$pkg/src/zugodiff/_goose"
-files="zudiff_goose.c zudiff_goose.h goose_vendor.c goose_version.h"
+files="zudiff_goose.c zudiff_goose.h goose_runtime.c goose_version.h"
 
 for f in $files; do
   [ -f "$zd/src/$f" ] || { echo "no src/$f in $zd" >&2; exit 1; }

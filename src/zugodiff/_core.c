@@ -1,14 +1,16 @@
 /* _core.c -- CPython glue for zudiff's diff core: the only C here that
    uses Python's API.
 
-   Every call into Goose goes through goose_py_run(). A Goose runtime
-   failure jumps back to goose_py_run(), which rewinds the data stacks, so
-   the body functions below must not hold Python references or raise: the
-   jump would skip the cleanup. Buffers are borrowed through the buffer
-   protocol before the run and released after it, and exceptions are set
-   only after the run returns. The one exception is PyErr_CheckSignals(),
-   which the interrupt poll calls during the run: it may set an exception
-   (KeyboardInterrupt), and the call then fails with goose_py_run()
+   Every call into Goose goes through goose_host_call(), from Goose's own
+   runtime built with -DGS_HOSTED (_goose/goose_runtime.c). A Goose runtime
+   failure, a data stack overflow included, jumps back to it, and the
+   runtime rewinds the data stacks, so the body functions below must not
+   hold Python references or raise: the jump would skip the cleanup.
+   Buffers are borrowed through the buffer protocol before the run and
+   released after it, and exceptions are set only after the run returns.
+   The one exception is PyErr_CheckSignals(), which the interrupt poll
+   (goose_host_poll) calls during the run: it may set an exception
+   (KeyboardInterrupt), and the call then fails with goose_host_call()
    returning 2 and that exception still set. The GIL is held throughout. */
 
 #define PY_SSIZE_T_CLEAN
@@ -17,11 +19,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "_goose/goose_py_runtime.h"
+#include <signal.h>
 #include "_goose/goose_version.h"
 #include "_goose/zudiff_goose.h"
 
-#define ERRLEN 512
 #define STR_(x) #x
 #define STR(x) STR_(x)
 
@@ -29,13 +30,25 @@ static PyObject *GooseError;
 
 /* Raises the error for a failed run: the interrupt's own exception when
    the poll set one, GooseError with the runtime's message otherwise. */
-static PyObject *run_failed(int failed, const char *err) {
+static PyObject *run_failed(int failed, const uint8_t *msg, int64_t len) {
   if (failed == 2 && PyErr_Occurred()) return NULL;
-  PyErr_SetString(GooseError, err);
+  PyObject *s = PyUnicode_DecodeUTF8((const char *)msg, (Py_ssize_t)len, "replace");
+  if (s) {
+    PyErr_SetObject(GooseError, s);
+    Py_DECREF(s);
+  }
   return NULL;
 }
 
-static int poll_signals(void) { return PyErr_CheckSignals() != 0; }
+/* Test hook: the n-th poll of the next run raises SIGINT first. */
+static long raise_after;
+
+/* Goose's poll hook, every 1024 search steps: Python's own signal check,
+   which runs any Python signal handler and may set KeyboardInterrupt. */
+static int poll_signals(void) {
+  if (raise_after > 0 && --raise_after == 0) raise(SIGINT);
+  return PyErr_CheckSignals() != 0;
+}
 
 /* --- diffs ---------------------------------------------------------------- */
 
@@ -124,12 +137,14 @@ static PyObject *core_diff(PyObject *self, PyObject *args) {
   c.algorithm = (int32_t)algorithm;
   c.max_cost = max_cost < 0 ? -1 : (int64_t)max_cost;
 
-  char err[ERRLEN];
-  int failed = goose_py_run(diff_body, &c, err, sizeof err);
+  const uint8_t *msg;
+  int64_t len;
+  int failed = goose_host_call(diff_body, &c, &msg, &len);
+  raise_after = 0;
   PyObject *out = failed ? NULL : PyBytes_FromStringAndSize((const char *)c.out, (Py_ssize_t)c.n);
   PyBuffer_Release(&va);
   PyBuffer_Release(&vb);
-  if (failed) return run_failed(failed, err);
+  if (failed) return run_failed(failed, msg, len);
   return out;
 }
 
@@ -148,9 +163,10 @@ static PyObject *core_probe_index(PyObject *self, PyObject *arg) {
   (void)self;
   probe_index_call c = {PyLong_AsLongLong(arg), 0};
   if (c.i == -1 && PyErr_Occurred()) return NULL;
-  char err[ERRLEN];
-  int failed = goose_py_run(probe_index_body, &c, err, sizeof err);
-  if (failed) return run_failed(failed, err);
+  const uint8_t *msg;
+  int64_t len;
+  int failed = goose_host_call(probe_index_body, &c, &msg, &len);
+  if (failed) return run_failed(failed, msg, len);
   return PyLong_FromLongLong(c.v);
 }
 
@@ -171,9 +187,10 @@ static PyObject *core_probe_stack(PyObject *self, PyObject *args) {
   (void)self;
   if (!PyArg_ParseTuple(args, "Lp", &n, &fail)) return NULL;
   probe_stack_call c = {n, (uint8_t)fail, 0};
-  char err[ERRLEN];
-  int failed = goose_py_run(probe_stack_body, &c, err, sizeof err);
-  if (failed) return run_failed(failed, err);
+  const uint8_t *msg;
+  int64_t len;
+  int failed = goose_host_call(probe_stack_body, &c, &msg, &len);
+  if (failed) return run_failed(failed, msg, len);
   return PyLong_FromLongLong(c.v);
 }
 
@@ -186,25 +203,26 @@ static void touch_gap_body(void *p) {
 static PyObject *core_test_touch_gap(PyObject *self, PyObject *unused) {
   (void)self;
   (void)unused;
-  unsigned char *gap = goose_py_test_gap();
+  uint8_t *gap = goose_host_test_gap();
   if (!gap) return PyErr_Format(GooseError, "no data stack");
-  char err[ERRLEN];
-  int failed = goose_py_run(touch_gap_body, gap, err, sizeof err);
-  if (failed) return run_failed(failed, err);
+  const uint8_t *msg;
+  int64_t len;
+  int failed = goose_host_call(touch_gap_body, gap, &msg, &len);
+  if (failed) return run_failed(failed, msg, len);
   Py_RETURN_NONE;
 }
 
 static PyObject *core_stack_used(PyObject *self, PyObject *unused) {
   (void)self;
   (void)unused;
-  return PyLong_FromSize_t(goose_py_stack_used());
+  return PyLong_FromLongLong(goose_host_stack_used());
 }
 
 static PyObject *core_test_raise_after(PyObject *self, PyObject *arg) {
   (void)self;
   long n = PyLong_AsLong(arg);
   if (n == -1 && PyErr_Occurred()) return NULL;
-  goose_py_test_raise_after(n);
+  raise_after = n;
   Py_RETURN_NONE;
 }
 
@@ -244,13 +262,16 @@ static struct PyModuleDef core_module = {PyModuleDef_HEAD_INIT, "_core",
 PyMODINIT_FUNC PyInit__core(void) {
   /* Goose's runtime has one set of globals per process. */
   static int started;
-  char err[ERRLEN];
+  const uint8_t *msg;
+  int64_t len;
   if (!started) {
-    if (goose_py_run(init_body, NULL, err, sizeof err)) {
-      PyErr_Format(PyExc_ImportError, "zugodiff: cannot start the Goose runtime: %s", err);
+    goose_host h = {NULL, poll_signals};
+    goose_host_set(&h);
+    if (goose_host_call(init_body, NULL, &msg, &len)) {
+      PyErr_Format(PyExc_ImportError, "zugodiff: cannot start the Goose runtime: %.*s",
+                   (int)len, (const char *)msg);
       return NULL;
     }
-    goose_py_set_poll(poll_signals);
     started = 1;
   }
   PyObject *m = PyModule_Create(&core_module);

@@ -6,7 +6,7 @@
    Link it with the runtime that `goose --emit-runtime` writes. */
 
 #define GS_SEPARATE_RUNTIME 1
-#define GS_RUNTIME_VERSION 05adb1799811
+#define GS_RUNTIME_VERSION 884c506b0ff0
 /* ==== runtime.h ==== */
 /* Goose runtime — the part every compiler-generated C file starts with.
    Plain C99 (+ #pragma pack, alignment typedefs); compiles with MSVC,
@@ -158,6 +158,16 @@ typedef double gs_f64 GS_ALIGN1;
 #endif
 /* Inlined at every call: the byte search's helpers (runtime_impl.h), and a
    function Goose wanted to inline but could not (FnSpec::cinline). */
+/* Helpers that some programs use and the runtime object does not: marked
+   rather than warned about, since hosts that check their compiler output
+   (R's package checks) count -Wunused-function, and may not silence it
+   with a pragma. */
+#if defined(__GNUC__) || defined(__clang__)
+#define GS_MAYBE_UNUSED __attribute__((unused))
+#else
+#define GS_MAYBE_UNUSED
+#endif
+
 #if defined(__GNUC__) || defined(__clang__)
 #define GS_INLINE __attribute__((always_inline)) inline
 #elif defined(_MSC_VER)
@@ -176,11 +186,16 @@ typedef double gs_f64 GS_ALIGN1;
 #define GS_TLS
 #endif
 
-/* The linkage of everything the runtime defines outside this file. */
+/* The linkage of everything the runtime defines outside this file. A host
+   that builds the runtime object itself may define it first, for instance
+   as extern with hidden visibility, so that the gs_* names cannot clash
+   with another copy of the runtime in the same process. */
+#ifndef GS_API
 #ifdef GS_SEPARATE_RUNTIME
 #define GS_API extern
 #else
 #define GS_API static
+#endif
 #endif
 
 #define GS_CAT_(a, b) a##b
@@ -364,7 +379,7 @@ static inline int gs_simd_detect(void) {
 
 /* Detected at the first call and kept. Every thread computes the same
    level, so a relaxed atomic is all a race between two first calls needs. */
-static inline int gs_simd_level(void) {
+GS_MAYBE_UNUSED static inline int gs_simd_level(void) {
     static int level = -1;
     int l = __atomic_load_n(&level, __ATOMIC_RELAXED);
     if (l < 0) {
@@ -446,7 +461,7 @@ static uint64_t gs_ld64(const void *p) { uint64_t v; memcpy(&v, p, 8); return v;
 
 /* The low k bytes of a word set (none for k <= 0, all for k >= 8): which
    bytes of a little-endian load lie within a length. */
-static uint64_t gs_bytemask(int64_t k) {
+GS_MAYBE_UNUSED static uint64_t gs_bytemask(int64_t k) {
     return k >= 8 ? ~(uint64_t)0 : k <= 0 ? 0 : ((uint64_t)1 << (k * 8)) - 1;
 }
 
@@ -486,7 +501,7 @@ static void gs_memcpy(void *dst, const void *src, size_t n) {
     memcpy(dst, src, n);
 }
 
-static void gs_memmove(void *dst, const void *src, size_t n) {
+GS_MAYBE_UNUSED static void gs_memmove(void *dst, const void *src, size_t n) {
     if (n) memmove(dst, src, n);
 }
 
@@ -505,7 +520,7 @@ static GS_NOINLINE int gs_memeq_long(const uint8_t *p, const uint8_t *q, size_t 
             (gs_ld64(p + n - 8) ^ gs_ld64(q + n - 8))) == 0;
 }
 
-static int gs_memeq(const void *a, const void *b, size_t n) {
+GS_MAYBE_UNUSED static int gs_memeq(const void *a, const void *b, size_t n) {
     const uint8_t *p = (const uint8_t *)a, *q = (const uint8_t *)b;
     if (n >= 8 && n <= 16)
         return ((gs_ld64(p) ^ gs_ld64(q)) | (gs_ld64(p + n - 8) ^ gs_ld64(q + n - 8))) == 0;
@@ -739,10 +754,13 @@ static uint64_t gs_shr_u64(uint64_t a, int64_t n) { return a >> (n & 63); }
 #if defined(__TINYC__)
 #define GS_HAVE_U128 0
 #elif defined(__SIZEOF_INT128__)
-__extension__ typedef unsigned __int128 gs_r_u128; /* zudiff patch */
 #define GS_HAVE_U128 1
+/* __extension__, or -pedantic reports "ISO C does not support '__int128'
+   types", which hosts that check their compiler output (R's package
+   checks) count as a warning. */
+__extension__ typedef unsigned __int128 gs_u128;
 static uint64_t gs_mulhi_u64(uint64_t a, uint64_t b) {
-    return (uint64_t)(((gs_r_u128)a * b) >> 64);
+    return (uint64_t)(((gs_u128)a * b) >> 64);
 }
 /* (hi * 2^64) / d and its remainder, for hi < d. Clang targeting the
    Microsoft ABI links no 128-bit division routine, so x86-64 divides with
@@ -754,7 +772,7 @@ static uint64_t gs_div128_u64(uint64_t hi, uint64_t d, uint64_t *rem) {
     *rem = r;
     return q;
 #else
-    gs_r_u128 n = (gs_r_u128)hi << 64;
+    gs_u128 n = (gs_u128)hi << 64;
     *rem = (uint64_t)(n % d);
     return (uint64_t)(n / d);
 #endif
@@ -770,7 +788,7 @@ static uint64_t gs_div128_u64(uint64_t hi, uint64_t d, uint64_t *rem) {
 #define GS_HAVE_U128 0
 #endif
 
-static uint64_t gs_divu_gen(uint64_t d, uint8_t *more) {
+GS_MAYBE_UNUSED static uint64_t gs_divu_gen(uint64_t d, uint8_t *more) {
 #if GS_HAVE_U128
     int k = 63;
     uint64_t rem, m;
@@ -796,7 +814,7 @@ static uint64_t gs_divu_gen(uint64_t d, uint8_t *more) {
 #endif
 }
 
-static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
+GS_MAYBE_UNUSED static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
 #if GS_HAVE_U128
     uint64_t q;
     if (!magic) return x >> more;
@@ -813,7 +831,7 @@ static uint64_t gs_divu_q(uint64_t x, uint64_t magic, uint8_t more) {
    magic: x / d is the high half of a 32x32 product, which a C compiler
    vectorizes where it keeps the 64x64 one scalar, and which needs no
    128-bit arithmetic, so only a zero divisor gets GS_DIVU_NONE. */
-static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
+GS_MAYBE_UNUSED static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
     int k = 31;
     uint64_t n;
     uint32_t m, rem;
@@ -834,7 +852,7 @@ static uint32_t gs_divu32_gen(uint32_t d, uint8_t *more) {
     return m + 1;
 }
 
-static uint32_t gs_divu32_q(uint32_t x, uint32_t magic, uint8_t more) {
+GS_MAYBE_UNUSED static uint32_t gs_divu32_q(uint32_t x, uint32_t magic, uint8_t more) {
     uint32_t q;
     if (!magic) return x >> more;
     q = (uint32_t)(((uint64_t)magic * x) >> 32);
@@ -854,7 +872,7 @@ static GS_NOINLINE int64_t gs_f2iwrap_slow(double d) {
     if (d < 0) d += 18446744073709551616.0;
     return (int64_t)(uint64_t)d;
 }
-static int64_t gs_f2iwrap(double d) {
+GS_MAYBE_UNUSED static int64_t gs_f2iwrap(double d) {
     if (d >= -9223372036854775808.0 && d < 9223372036854775808.0) return (int64_t)d;
     return gs_f2iwrap_slow(d);
 }
@@ -1131,11 +1149,11 @@ static int64_t gs_uleb_size(const uint8_t *p) {
    program stored, so scalar fields and relative offsets keep the loop above
    inline, where the compilers peel the first byte themselves. */
 
-static GS_NOINLINE int64_t gs_uleb_read_slow(const uint8_t *p) {
+GS_MAYBE_UNUSED static GS_NOINLINE int64_t gs_uleb_read_slow(const uint8_t *p) {
     return gs_uleb_read(p);
 }
 
-static GS_NOINLINE int64_t gs_uleb_size_slow(const uint8_t *p) {
+GS_MAYBE_UNUSED static GS_NOINLINE int64_t gs_uleb_size_slow(const uint8_t *p) {
     return gs_uleb_size(p);
 }
 
@@ -1152,12 +1170,12 @@ static int64_t gs_uleb_write(uint8_t *p, uint64_t v) {
     return (int64_t)(q - p);
 }
 
-static int64_t gs_zig_read(const uint8_t *p) {
+GS_MAYBE_UNUSED static int64_t gs_zig_read(const uint8_t *p) {
     uint64_t u = (uint64_t)gs_uleb_read(p);
     return (int64_t)((u >> 1) ^ (0u - (u & 1)));
 }
 
-static int64_t gs_zig_write(uint8_t *p, int64_t v) {
+GS_MAYBE_UNUSED static int64_t gs_zig_write(uint8_t *p, int64_t v) {
     return gs_uleb_write(p, ((uint64_t)v << 1) ^ (uint64_t)(v >> 63));
 }
 
@@ -1191,7 +1209,7 @@ static int64_t gs_uleb_check(const uint8_t *p, const uint8_t *end, uint64_t *out
 
 /* The same for a signed (zigzag) varint: a value field or a self-relative
    offset of varint width (3.6). */
-static int64_t gs_zig_check(const uint8_t *p, const uint8_t *end, int64_t *out) {
+GS_MAYBE_UNUSED static int64_t gs_zig_check(const uint8_t *p, const uint8_t *end, int64_t *out) {
     uint64_t u = 0;
     int64_t k = gs_uleb_check(p, end, &u);
     if (k) *out = (int64_t)((u >> 1) ^ (0u - (u & 1)));
@@ -1212,7 +1230,7 @@ static int64_t gs_zig_check(const uint8_t *p, const uint8_t *end, int64_t *out) 
    target this compiles for is. The test is a constant to any optimizer; it is
    here so that a big-endian host fails loudly instead of writing bytes that
    only it can read back. */
-static int gs_is_le(void) {
+GS_MAYBE_UNUSED static int gs_is_le(void) {
     const uint16_t one = 1;
     return *(const uint8_t *)&one == 1;
 }
@@ -1386,13 +1404,13 @@ static void gs_bld_append(gs_rref b, const void *p, int64_t n) {
    library handed back as a u64, copied into a builder, so nothing foreign
    is a Goose value without a copy. The pointer is trusted as every extern
    call trusts C; a null one appends nothing and is the false result. */
-static uint8_t gs_ffi_cstr(uint64_t p, gs_rref out) {
+GS_MAYBE_UNUSED static uint8_t gs_ffi_cstr(uint64_t p, gs_rref out) {
     const char *s = (const char *)(uintptr_t)p;
     if (!s) return 0;
     gs_bld_append(out, s, (int64_t)strlen(s));
     return 1;
 }
-static uint8_t gs_ffi_bytes(uint64_t p, int64_t n, gs_rref out) {
+GS_MAYBE_UNUSED static uint8_t gs_ffi_bytes(uint64_t p, int64_t n, gs_rref out) {
     if (!p) return 0;
     gs_bld_append(out, (const void *)(uintptr_t)p, n);
     return 1;
@@ -1410,11 +1428,11 @@ static uint8_t gs_ffi_bytes(uint64_t p, int64_t n, gs_rref out) {
 #endif
 #endif
 #ifdef GS_SQRT_NO_ERRNO
-static double gs_sqrt(double x) { return __builtin_elementwise_sqrt(x); }
-static float gs_sqrtf(float x) { return __builtin_elementwise_sqrt(x); }
+GS_MAYBE_UNUSED static double gs_sqrt(double x) { return __builtin_elementwise_sqrt(x); }
+GS_MAYBE_UNUSED static float gs_sqrtf(float x) { return __builtin_elementwise_sqrt(x); }
 #else
-static double gs_sqrt(double x) { return sqrt(x); }
-static float gs_sqrtf(float x) { return sqrtf(x); }
+GS_MAYBE_UNUSED static double gs_sqrt(double x) { return sqrt(x); }
+GS_MAYBE_UNUSED static float gs_sqrtf(float x) { return sqrtf(x); }
 #endif
 
 /* math's mul_add (stdlib/math.goose): x * y + z, fused into one rounding
@@ -1429,22 +1447,22 @@ static float gs_sqrtf(float x) { return sqrtf(x); }
 static inline double gs_mul_add_separate(double x, double y, double z) { return x * y + z; }
 static inline float gs_mul_addf_separate(float x, float y, float z) { return x * y + z; }
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(__TINYC__)
-static inline __attribute__((always_inline)) double gs_mul_add_fused(double x, double y, double z) {
+GS_MAYBE_UNUSED static inline __attribute__((always_inline)) double gs_mul_add_fused(double x, double y, double z) {
     return __builtin_fma(x, y, z);
 }
-static inline __attribute__((always_inline)) float gs_mul_addf_fused(float x, float y, float z) {
+GS_MAYBE_UNUSED static inline __attribute__((always_inline)) float gs_mul_addf_fused(float x, float y, float z) {
     return __builtin_fmaf(x, y, z);
 }
 #else
-static inline double gs_mul_add_fused(double x, double y, double z) { return fma(x, y, z); }
-static inline float gs_mul_addf_fused(float x, float y, float z) { return fmaf(x, y, z); }
+GS_MAYBE_UNUSED static inline double gs_mul_add_fused(double x, double y, double z) { return fma(x, y, z); }
+GS_MAYBE_UNUSED static inline float gs_mul_addf_fused(float x, float y, float z) { return fmaf(x, y, z); }
 #endif
 #define GS_MUL_ADD_CAT2(a, b) a##b
 #define GS_MUL_ADD_CAT(a, b) GS_MUL_ADD_CAT2(a, b)
-static double gs_mul_add(double x, double y, double z) {
+GS_MAYBE_UNUSED static double gs_mul_add(double x, double y, double z) {
     return GS_MUL_ADD_CAT(gs_mul_add_, GS_MUL_ADD_BASE)(x, y, z);
 }
-static float gs_mul_addf(float x, float y, float z) {
+GS_MAYBE_UNUSED static float gs_mul_addf(float x, float y, float z) {
     return GS_MUL_ADD_CAT(gs_mul_addf_, GS_MUL_ADD_BASE)(x, y, z);
 }
 #define gs_mul_add(x, y, z) GS_MUL_ADD_CAT(gs_mul_add_, GS_MUL_ADD_MODE)(x, y, z)
@@ -1495,8 +1513,8 @@ GS_LIBM float gs_powf(float x, float y) GS_LIBM2(powf)
 
 /* std's find_any and find_pair over a slice (gs_scan_any, gs_scan_pair); a
    set is a pointer to std's ByteSet. */
-static int64_t gs_find_any(sl_u8 s, const void *set) { return gs_scan_any(s.data, s.len, set); }
-static int64_t gs_find_pair(sl_u8 s, const void *a, int64_t d, const void *b) {
+GS_MAYBE_UNUSED static int64_t gs_find_any(sl_u8 s, const void *set) { return gs_scan_any(s.data, s.len, set); }
+GS_MAYBE_UNUSED static int64_t gs_find_pair(sl_u8 s, const void *a, int64_t d, const void *b) {
     return gs_scan_pair(s.data, s.len, a, d, b);
 }
 
@@ -1506,7 +1524,7 @@ static int64_t gs_find_pair(sl_u8 s, const void *a, int64_t d, const void *b) {
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <intrin.h>
 #endif
-static int64_t gs_popcount(uint64_t x) {
+GS_MAYBE_UNUSED static int64_t gs_popcount(uint64_t x) {
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(__TINYC__)
     return __builtin_popcountll(x);
 #elif defined(_MSC_VER) && defined(_M_X64) && defined(__AVX__)
@@ -1520,7 +1538,7 @@ static int64_t gs_popcount(uint64_t x) {
     return n;
 #endif
 }
-static int64_t gs_clz(uint64_t x) {
+GS_MAYBE_UNUSED static int64_t gs_clz(uint64_t x) {
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(__TINYC__)
     return x ? __builtin_clzll(x) : 64;
 #elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
@@ -1536,7 +1554,7 @@ static int64_t gs_clz(uint64_t x) {
     return n;
 #endif
 }
-static int64_t gs_ctz(uint64_t x) {
+GS_MAYBE_UNUSED static int64_t gs_ctz(uint64_t x) {
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(__TINYC__)
     return x ? __builtin_ctzll(x) : 64;
 #elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_ARM64))
@@ -1600,7 +1618,7 @@ GS_API int64_t gs_slice_pool_regrow(gs_rref nodes, void *tree, int64_t len, int6
 /* ---- includes ---- */
 
 /* ---- extern prototypes ---- */
-void zudiff_check_interrupt(void);
+void goose_host_poll(void);
 
 /* ---- prototypes ---- */
 static void put_i32_g(gs_i32 p0, int64_t gs_sp);
@@ -2411,7 +2429,7 @@ static void myers_greedy_g_14(void *a_g_data, int64_t a_g_len, void *b_g_data, i
         {
             GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
             if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                zudiff_check_interrupt();
+                goose_host_poll();
             }
         }
         k_g = gs_neg_i64(d_g, gs_file0, 205);
@@ -2904,7 +2922,7 @@ static void run_tasks_g_16(void *a_g_data, int64_t a_g_len, void *b_g_data, int6
                 {
                     GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
                     if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                        zudiff_check_interrupt();
+                        goose_host_poll();
                     }
                 }
                 t14 = xoff_g;
@@ -3435,7 +3453,7 @@ static Part_g diag_g_19(void *a_g_data, int64_t a_g_len, void *b_g_data, int64_t
         {
             GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
             if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                zudiff_check_interrupt();
+                goose_host_poll();
             }
         }
         if ((uint8_t)((gs_i64)((gs_i64)(fmin_g)) > (gs_i64)(dmin_g))) {
@@ -4239,7 +4257,7 @@ static void run_tasks_g_21(gs_rhdr *a_g_hdr, gs_stack *a_g_stk, gs_rhdr *b_g_hdr
                 {
                     GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
                     if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                        zudiff_check_interrupt();
+                        goose_host_poll();
                     }
                 }
                 uint8_t *t14 = (a_g.hdr->base);
@@ -4841,7 +4859,7 @@ static Part_g diag_g_25(gs_rhdr *a_g_hdr, gs_stack *a_g_stk, gs_rhdr *b_g_hdr, g
         {
             GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
             if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                zudiff_check_interrupt();
+                goose_host_poll();
             }
         }
         if ((uint8_t)((gs_i64)((gs_i64)(fmin_g)) > (gs_i64)(dmin_g))) {
@@ -5744,7 +5762,7 @@ static void myers_greedy_g_28(void *a_g_data, int64_t a_g_len, void *b_g_data, i
         {
             GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
             if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                zudiff_check_interrupt();
+                goose_host_poll();
             }
         }
         k_g = gs_neg_i64(d_g, gs_file0, 205);
@@ -6231,7 +6249,7 @@ static void run_tasks_g_30(void *a_g_data, int64_t a_g_len, void *b_g_data, int6
                 {
                     GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
                     if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                        zudiff_check_interrupt();
+                        goose_host_poll();
                     }
                 }
                 t14 = xoff_g;
@@ -6762,7 +6780,7 @@ static Part_g diag_g_33(void *a_g_data, int64_t a_g_len, void *b_g_data, int64_t
         {
             GS_GL->polls_g = gs_add_i64(GS_GL->polls_g, 1, gs_file0, 54);
             if ((uint8_t)((gs_i64)((gs_i64)((gs_i64)((gs_i64)((gs_i64)(GS_GL->polls_g)) & (gs_i64)(1023)))) == (gs_i64)(0))) {
-                zudiff_check_interrupt();
+                goose_host_poll();
             }
         }
         if ((uint8_t)((gs_i64)((gs_i64)(fmin_g)) > (gs_i64)(dmin_g))) {
