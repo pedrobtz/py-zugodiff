@@ -44,6 +44,12 @@ jobs:
         run: |
           CC=clang CFLAGS="-fsanitize=undefined,alignment -fno-sanitize-recover=all -fno-omit-frame-pointer" \
             LDFLAGS="-fsanitize=undefined" pip install '.[test]'
+      # Fails unless the build really used the sanitizer flags. The path is
+      # found without importing zugodiff, which needs the preloaded runtime.
+      - name: The extension is instrumented
+        run: |
+          so=$(python -c "import glob, sysconfig; print(glob.glob(sysconfig.get_path('platlib') + '/zugodiff/_core*.so')[0])")
+          nm -D --undefined-only "$so" | grep -m 3 __ubsan_handle
       - name: Test
         run: |
           export LD_PRELOAD=$(clang -print-file-name=libclang_rt.ubsan_standalone-x86_64.so)
