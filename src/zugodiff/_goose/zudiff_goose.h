@@ -66,6 +66,21 @@ typedef struct { int64_t e[3]; } a3_i64;
 extern "C" {
 #endif
 void goose_init(int argc, char **argv);
+/* For a host process, with the runtime built with -DGS_HOSTED: goose_init
+   and every exported function run inside goose_host_call, which returns
+   0, or 1 on a failure (2 when the host's poll stopped it) with the data
+   stacks rewound and the message in *msg. */
+typedef struct {
+    void (*out)(int stream, const uint8_t *p, int64_t len);
+    int (*poll)(void);
+} goose_host;
+void goose_host_set(const goose_host *host);
+int goose_host_call(void (*body)(void *), void *data, const uint8_t **msg,
+                    int64_t *len);
+void goose_host_poll(void);
+int64_t goose_host_stack_used(void);
+uint8_t *goose_host_test_gap(void);
+void goose_host_unload(void);
 const uint8_t * zudiff_diff_ids(sl_i32 gs_export_arg0, sl_i32 gs_export_arg1, gs_i32 gs_export_arg2, gs_i64 gs_export_arg3, gs_i64 *gs_export_len);
 const uint8_t * zudiff_diff_bytes(sl_u8 gs_export_arg0_2, sl_u8 gs_export_arg1_2, gs_i32 gs_export_arg2_2, gs_i64 gs_export_arg3_2, gs_i64 *gs_export_len_2);
 gs_i64 zudiff_probe_index(gs_i64 gs_export_arg0_3);

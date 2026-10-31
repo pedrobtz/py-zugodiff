@@ -8,8 +8,6 @@ Copyright (c) 2026 Pedro Baltazar, MIT licence (see LICENSE):
 
     src/zugodiff/__init__.py                the Python interface
     src/zugodiff/_core.c                    the CPython glue
-    src/zugodiff/_goose/goose_py_runtime.*  the replacement Goose runtime,
-                                            ported from zudiff's
     tools/, tests/, bench/
 
 
@@ -30,7 +28,7 @@ The full licence is LICENSES/goose-LICENSE. These files are under it:
                                          inline into every program
     src/zugodiff/_goose/zudiff_goose.h   written by the same compilation
     src/zugodiff/_goose/goose_version.h  the compiler's runtime interface hash
-    src/zugodiff/_goose/goose_vendor.c   byte search and number formatting,
-                                         copied from src/runtime/runtime_impl.h
+    src/zugodiff/_goose/goose_runtime.c  Goose's runtime, as goose
+                                         --emit-runtime writes it
 
 Apache-2.0 and MIT are compatible: each file keeps its own terms.

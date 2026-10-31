@@ -33,9 +33,8 @@ src/zugodiff/__init__.py               items to int32 ids (a dict), unpacking
 src/zugodiff/_core.c                   CPython glue: the only C using Python.h
 ───────────────────────────── plain C below ─────────────────────────────
 src/zugodiff/_goose/zudiff_goose.{c,h} generated from zudiff's Goose source
-src/zugodiff/_goose/goose_vendor.c     copied from Goose's runtime_impl.h
+src/zugodiff/_goose/goose_runtime.c    Goose's runtime, built -DGS_HOSTED
 src/zugodiff/_goose/goose_version.h    the Goose commit and runtime hash
-src/zugodiff/_goose/goose_py_runtime.c first-party runtime, from zudiff's
 ```
 
 `tools/sync-zudiff.sh <zudiff-checkout>` copies the generated files from
@@ -44,17 +43,18 @@ compiler is needed to build: `pip install .` needs only a C compiler.
 
 ## What the runtime does
 
-Goose's stock runtime ends the process on any failure. zudiff replaced it
-with one that reports failures as R errors; `goose_py_runtime.c` is that
-runtime with the R parts removed:
+Goose's stock runtime ends the process on any failure. The Goose fork
+(`pedrobtz/goose`, zudiff's `.agents/goose-fork.md`) adds a hosted mode,
+`-DGS_HOSTED`, which zudiff and zugodiff both build unchanged; this package
+has no runtime code of its own:
 
 - **Failures are exceptions.** A bounds check, an assert or a data stack
-  overflow jumps back to `goose_py_run()`. The data stacks are rewound, and
+  overflow jumps back to `goose_host_call()`. The data stacks are rewound, and
   the glue raises `zugodiff.GooseError`.
 - **Ctrl-C is CPython's.** The core polls every 1024 search steps, and
   the poll calls `PyErr_CheckSignals()`. A `KeyboardInterrupt`, or any
   exception a Python signal handler raises, fails the call cleanly. The
-  runtime installs no `SIGINT` handler, unlike zudiff's.
+  runtime installs no `SIGINT` handler.
 - **Nested calls are refused.** A signal handler that calls back into
   zugodiff gets `GooseError`, because Goose's globals are per process.
 - **Guard pages.** Data stacks are reserved with a `PROT_NONE` gap. A fault
